@@ -1,0 +1,59 @@
+{
+  "name": "noimg",
+  "version": "0.3.0",
+  "description": "A tiny stdio-only MCP that makes @noimg mean no image generation for the current request.",
+  "type": "module",
+  "bin": {
+    "noimg": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "docs",
+    "SECURITY.md",
+    "LICENSE",
+    "assets",
+    "codex",
+    "claude-code",
+    "cursor",
+    "gemini-cli",
+    "generic"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node test/smoke.mjs && node test/architecture.mjs",
+    "check": "npm test && npm audit --omit=dev && node dist/cli.js --version && node dist/cli.js --help"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "noimg",
+    "stdio",
+    "codex",
+    "claude-code",
+    "cursor",
+    "gemini-cli",
+    "ai-agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jhuang-tw/noimg.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jhuang-tw/noimg/issues"
+  },
+  "homepage": "https://github.com/jhuang-tw/noimg#readme",
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.0.0",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@types/node": "^24.3.0",
+    "typescript": "^6.0.0"
+  },
+  "license": "MIT"
+}

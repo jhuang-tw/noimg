@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.tgz
+.env
+.env.*
+.DS_Store
+Thumbs.db
+
+# Local-only legacy/private deployment state. Never commit.
+wrangler.jsonc
+.wrangler/
+.private/

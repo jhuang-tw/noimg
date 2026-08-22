@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm test
+      - run: npm audit --omit=dev
+      - run: node dist/cli.js --help
+      - run: node dist/cli.js --version
+
+      - name: Validate stdio-only public boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          files=(
+            "README.md"
+            "SECURITY.md"
+            "LICENSE"
+            "docs/usage.md"
+            "docs/development.md"
+            "assets/logo.png"
+            "assets/logo-small.png"
+            "codex/AGENTS.md"
+            "claude-code/CLAUDE.md"
+            "cursor/noimg.mdc"
+            "gemini-cli/GEMINI.md"
+            "generic/SKILL.md"
+          )
+          for file in "${files[@]}"; do test -s "$file"; done
+
+          test "$(wc -l < README.md)" -le 110
+
+          banned_files=(
+            "src/auth.ts"
+            "src/http.ts"
+            "src/share.ts"
+            "src/worker.ts"
+            "test/auth.mjs"
+            "test/setup.mjs"
+            "docs/transports.md"
+            "wrangler.example.jsonc"
+          )
+          for file in "${banned_files[@]}"; do test ! -e "$file"; done
+
+          # Public runtime must remain stdio-only and network-free.
+          ! grep -RniE 'OAuthProvider|Bearer|ngrok|cloudflare|@hono|node:(http|https|net|tls)|127\.0\.0\.1|0\.0\.0\.0|\bfetch\s*\(|\.listen\s*\(' src
+          grep -Fq 'No network listener. No remote mode. No tunnel.' src/cli.ts
+
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const deps = Object.keys(pkg.dependencies ?? {}).sort();
+          const expected = ['@modelcontextprotocol/server', 'zod'];
+          if (JSON.stringify(deps) !== JSON.stringify(expected)) {
+            throw new Error(`Unexpected runtime dependencies: ${deps.join(', ')}`);
+          }
+          if (pkg.version !== '0.3.0') throw new Error(`Unexpected package version: ${pkg.version}`);
+          NODE
+
+          rules=(
+            "codex/AGENTS.md"
+            "claude-code/CLAUDE.md"
+            "cursor/noimg.mdc"
+            "gemini-cli/GEMINI.md"
+            "generic/SKILL.md"
+          )
+          for file in "${rules[@]}"; do
+            grep -Fq '@noimg' "$file"
+            grep -Fq 'NON-IMAGE OUTPUT' "$file"
+            grep -Fq 'HARD BLOCK' "$file"
+            grep -Fq 'Before tool routing' "$file"
+            grep -Fq 'image-generation' "$file"
+            grep -Fq 'image-editing' "$file"
+            grep -Fq 'image-rendering' "$file"
+          done
+
+          # Until the npm namespace is secured, never tell users to execute it by package name.
+          if git grep -nE 'npx[[:space:]]+(-y[[:space:]]+)?noimg|npm (i|install)[[:space:]]+noimg' -- ':!package-lock.json'; then
+            echo 'Unsafe pre-publication npm install instruction found.' >&2
+            exit 1
+          fi
+
+          # Cheap accidental-secret guard.
+          if git grep -nE '(ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{20,})' -- ':!package-lock.json'; then
+            echo 'Potential credential found in tracked files.' >&2
+            exit 1
+          fi
+
+          npm pack --dry-run >/tmp/noimg-pack.txt
+          ! grep -Ei 'src/(auth|http|share|worker)\.ts|wrangler|transports\.md' /tmp/noimg-pack.txt
