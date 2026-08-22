@@ -1,0 +1,38 @@
+{
+  "hooks": {
+    "BeforeAgent": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ./hooks/noimg-guard.mjs gemini",
+            "name": "NoIMG exact-token detector"
+          }
+        ]
+      }
+    ],
+    "BeforeToolSelection": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ./hooks/noimg-guard.mjs gemini",
+            "name": "NoIMG tool-selection filter"
+          }
+        ]
+      }
+    ],
+    "BeforeTool": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ./hooks/noimg-guard.mjs gemini",
+            "name": "NoIMG tool veto"
+          }
+        ]
+      }
+    ]
+  }
+}

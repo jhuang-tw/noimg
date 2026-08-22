@@ -1,0 +1,161 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm test
+      - run: npm audit --omit=dev
+      - run: node dist/cli.js --help
+      - run: node dist/cli.js --version
+
+      - name: Validate stdio-only public boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          files=(
+            "README.md"
+            "SECURITY.md"
+            "LICENSE"
+            "docs/usage.md"
+            "docs/development.md"
+            "docs/hooks.md"
+            "chatgpt/CUSTOM_INSTRUCTIONS.md"
+            "hooks/noimg-guard.mjs"
+            "claude-code/settings.example.json"
+            "gemini-cli/settings.example.json"
+            "codex/hooks.example.json"
+            "codex/config.example.toml"
+            "assets/logo.png"
+            "assets/logo-small.png"
+            "codex/AGENTS.md"
+            "claude-code/CLAUDE.md"
+            "cursor/noimg.mdc"
+            "gemini-cli/GEMINI.md"
+            "generic/SKILL.md"
+          )
+          for file in "${files[@]}"; do test -s "$file"; done
+
+          test "$(wc -l < README.md)" -le 110
+
+          banned_files=(
+            "src/auth.ts"
+            "src/http.ts"
+            "src/share.ts"
+            "src/worker.ts"
+            "test/auth.mjs"
+            "test/setup.mjs"
+            "docs/transports.md"
+            "wrangler.example.jsonc"
+          )
+          for file in "${banned_files[@]}"; do test ! -e "$file"; done
+
+          # Public runtime must remain stdio-only and network-free.
+          ! grep -RniE 'OAuthProvider|Bearer|ngrok|cloudflare|@hono|node:(http|https|net|tls)|127\.0\.0\.1|0\.0\.0\.0|\bfetch\s*\(|\.listen\s*\(' src hooks
+          grep -Fq 'No network listener. No remote mode. No tunnel.' src/cli.ts
+
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const deps = Object.keys(pkg.dependencies ?? {}).sort();
+          const expected = ['@modelcontextprotocol/server', 'zod'];
+          if (JSON.stringify(deps) !== JSON.stringify(expected)) {
+            throw new Error(`Unexpected runtime dependencies: ${deps.join(', ')}`);
+          }
+          if (pkg.name !== '@alr51307/noimg') throw new Error(`Unexpected package name: ${pkg.name}`);
+          if (pkg.version !== '0.3.2') throw new Error(`Unexpected package version: ${pkg.version}`);
+          NODE
+
+          rules=(
+            "codex/AGENTS.md"
+            "claude-code/CLAUDE.md"
+            "cursor/noimg.mdc"
+            "gemini-cli/GEMINI.md"
+            "generic/SKILL.md"
+          )
+          for file in "${rules[@]}"; do
+            grep -Fq '@noimg' "$file"
+            grep -Fq 'GENERATIVE IMAGE CREATION ONLY' "$file"
+            grep -Fq 'nogenimg' "$file"
+            grep -Fq 'Do not activate NoIMG from inferred intent' "$file"
+            grep -Fq 'When `@noimg` is absent' "$file"
+            grep -Fq 'HARD BLOCK' "$file"
+            grep -Fq 'Before tool routing' "$file"
+            grep -Fq 'DO NOT BLOCK' "$file"
+            grep -Fq 'generative image model/tool' "$file"
+            grep -Fq 'rendering' "$file"
+            grep -Fq 'previewing' "$file"
+          done
+
+          # @noimg must never drift back into blocking ordinary existing-image rendering.
+          if grep -RniE 'HARD BLOCK.*image-rendering|exclude .*image-rendering|NON-IMAGE OUTPUT' src codex claude-code cursor gemini-cli generic chatgpt docs README.md; then
+            echo 'NoIMG scope drifted beyond generative image creation.' >&2
+            exit 1
+          fi
+
+          # NoIMG is exact-token only. Ordinary language must never become a semantic trigger/alias again.
+          if grep -RniE 'SEMANTIC REINFORCERS|Semantic reinforcers|semanticAliases' src codex claude-code cursor gemini-cli generic chatgpt docs README.md; then
+            echo 'NoIMG drifted back to inferred semantic triggers.' >&2
+            exit 1
+          fi
+          grep -Fq 'exact literal token @noimg' chatgpt/CUSTOM_INSTRUCTIONS.md
+          grep -Fq 'Do not activate this rule from inferred intent' chatgpt/CUSTOM_INSTRUCTIONS.md
+          grep -Fq 'When @noimg is absent, this rule has NO effect' chatgpt/CUSTOM_INSTRUCTIONS.md
+
+          # Hard-hook adapters must stay exact-token, request-scoped, and non-networked.
+          grep -Fq 'exactNoimgToken' hooks/noimg-guard.mjs
+          grep -Fq 'NOIMG_GENERATIVE_TOOL_REGEX' hooks/noimg-guard.mjs
+          grep -Fq "event === 'UserPromptSubmit'" hooks/noimg-guard.mjs
+          grep -Fq "event === 'BeforeAgent'" hooks/noimg-guard.mjs
+          grep -Fq "event === 'BeforeToolSelection'" hooks/noimg-guard.mjs
+          grep -Fq "event === 'BeforeTool'" hooks/noimg-guard.mjs
+          grep -Fq "permissionDecision: 'deny'" hooks/noimg-guard.mjs
+          grep -Fq "decision: 'deny'" hooks/noimg-guard.mjs
+          grep -Fq 'UserPromptSubmit' claude-code/settings.example.json
+          grep -Fq 'PreToolUse' claude-code/settings.example.json
+          grep -Fq 'BeforeToolSelection' gemini-cli/settings.example.json
+          grep -Fq 'BeforeTool' gemini-cli/settings.example.json
+          grep -Fq 'UserPromptSubmit' codex/hooks.example.json
+          grep -Fq 'PreToolUse' codex/hooks.example.json
+          grep -Fq 'hooks = true' codex/config.example.toml
+
+          # Keep the public MCP surface intentionally tiny and structurally explicit.
+          test "$(grep -c 'server.registerTool(' src/server.ts)" -eq 1
+          grep -Fq "'noimg'" src/server.ts
+          grep -Fq 'outputSchema: z.object({' src/server.ts
+          grep -Fq 'nonTriggers: z.array(z.string())' src/server.ts
+          grep -Fq '@noimg is the only NoIMG trigger' src/server.ts
+          grep -Fq 'readOnlyHint: true' src/server.ts
+          grep -Fq 'destructiveHint: false' src/server.ts
+
+          # The official distribution is scoped. Never drift back to an unscoped package command.
+          grep -Fq '@alr51307/noimg@0.3.2' README.md
+          grep -Fq '@alr51307/noimg@0.3.2' docs/usage.md
+          if git grep -nE 'npx[[:space:]]+(-y[[:space:]]+)?noimg([@[:space:]]|$)|npm (i|install)[[:space:]]+noimg([@[:space:]]|$)' -- ':!package-lock.json'; then
+            echo 'Unscoped noimg npm command found.' >&2
+            exit 1
+          fi
+
+          # Cheap accidental-secret guard.
+          if git grep -nE '(ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{20,})' -- ':!package-lock.json'; then
+            echo 'Potential credential found in tracked files.' >&2
+            exit 1
+          fi
+
+          npm pack --dry-run >/tmp/noimg-pack.txt
+          ! grep -Ei '(src|dist)/(auth|http|share|worker|setup)\.(ts|js)|wrangler|transports\.md|\.private' /tmp/noimg-pack.txt

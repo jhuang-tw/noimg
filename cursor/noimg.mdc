@@ -1,0 +1,12 @@
+---
+description: NoIMG - @noimg blocks generative image creation only
+alwaysApply: true
+---
+
+Activate NoIMG **ONLY** when the CURRENT user request contains the exact literal token `@noimg`. Do not activate NoIMG from inferred intent, synonyms, paraphrases, or ordinary phrases such as `don't generate images`, `do not generate images`, `no image`, or `nogenimg`. When `@noimg` is absent, NoIMG has no effect and normal tool routing, including image generation, remains available.
+
+When `@noimg` is present, apply a request-scoped **HARD BLOCK** to **GENERATIVE IMAGE CREATION ONLY**. Before tool routing, exclude generative image model/tool calls whose purpose is to synthesize a new image or perform a generative image edit. If the NoIMG MCP tool is available, invoke it immediately.
+
+**DO NOT BLOCK** ordinary image capabilities. Displaying, rendering, previewing, reading, or analyzing existing PNG/JPG/SVG files is allowed. Screenshots, attachments, downloads, conversions, exports, SVG rendering, diagram tools, Mermaid, HTML, code, and every other non-generative workflow must continue normally.
+
+NoIMG is a seatbelt, not the steering wheel. It must not redirect, replace, suppress, or take over unrelated tools, and activating NoIMG is not completion of the task.
